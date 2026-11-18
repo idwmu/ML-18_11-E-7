@@ -8,6 +8,7 @@ reference .route in datasets/ (works for student_test/train trips that
 ship a .route). Reserved evaluator trips have no .route -> accuracy n/a.
 """
 from pathlib import Path
+import numpy as np
 import streamlit as st
 import pandas as pd
 import folium
@@ -45,6 +46,34 @@ def load_route_arcs(trip_id):
             except Exception:
                 return None
     return None
+
+def load_trip_geom(trip_id):
+    """Load nodes [lon,lat] and arcs [from_node,to_node] from the local dataset."""
+    for part in ("evaluator_test", "student_test", "train"):
+        d = DATASETS / part / trip_id
+        if (d / f"{trip_id}.nodes").exists():
+            try:
+                nodes = np.loadtxt(d / f"{trip_id}.nodes")
+                arcs = np.loadtxt(d / f"{trip_id}.arcs", dtype=int)
+                if arcs.ndim == 1:
+                    arcs = arcs.reshape(-1, 2)
+                return nodes, arcs
+            except Exception:
+                return None, None
+    return None, None
+
+
+def arc_segments(arc_ids, nodes, arcs):
+    """Return [[lat,lon],[lat,lon]] segments for each arc id (folium order)."""
+    segs = []
+    for aid in arc_ids:
+        aid = int(aid)
+        if 0 <= aid < len(arcs):
+            fn, tn = arcs[aid]
+            if 0 <= fn < len(nodes) and 0 <= tn < len(nodes):
+                segs.append([[nodes[fn][1], nodes[fn][0]], [nodes[tn][1], nodes[tn][0]]])
+    return segs
+
 
 def route_scores(pred_ids, true_ids):
     pred, true = {int(a) for a in pred_ids}, {int(a) for a in true_ids}
@@ -138,18 +167,45 @@ if res:
                    "true-arc miss — this is usually ~0.")
     st.caption(f"Scoring model: {res.get('model_name', '?')}")
 
-    # Map
+    # Map: raw GPS observations vs the predicted (matched) route, as separate layers.
     pts = res.get("points", [])
     coords = [[p[1], p[0]] for p in pts]  # API gives [lon,lat]; folium needs [lat,lon]
     if coords:
         m = folium.Map(location=[sum(c[0] for c in coords) / len(coords),
                                  sum(c[1] for c in coords) / len(coords)],
-                       zoom_start=15, tiles="OpenStreetMap")
-        folium.PolyLine(coords, color="blue", weight=4, opacity=0.8,
-                        tooltip="Predicted route").add_to(m)
+                       zoom_start=14, tiles="OpenStreetMap")
+
+        # Layer 1: raw GPS observations (red)
+        raw = folium.FeatureGroup(name="Raw GPS observations", show=True)
+        folium.PolyLine(coords, color="red", weight=2, opacity=0.5).add_to(raw)
+        for c in coords:
+            folium.CircleMarker(c, radius=2, color="red", fill=True, fill_opacity=0.7).add_to(raw)
+        raw.add_to(m)
+
+        nodes, arcs = load_trip_geom(st.session_state.trip_id)
+        if nodes is not None and arcs is not None:
+            # Layer 2: predicted / matched route (blue) from predicted_arc_ids
+            pred = folium.FeatureGroup(name="Predicted route (matched arcs)", show=True)
+            for seg in arc_segments(pred_ids, nodes, arcs):
+                folium.PolyLine(seg, color="blue", weight=5, opacity=0.85).add_to(pred)
+            pred.add_to(m)
+
+            # Layer 3: reference route (green), off by default
+            ref_ids = load_route_arcs(st.session_state.trip_id)
+            if ref_ids:
+                ref = folium.FeatureGroup(name="Reference route", show=False)
+                for seg in arc_segments(ref_ids, nodes, arcs):
+                    folium.PolyLine(seg, color="green", weight=3, opacity=0.7).add_to(ref)
+                ref.add_to(m)
+        else:
+            st.caption("Road geometry not found locally, showing GPS observations only.")
+
         folium.CircleMarker(coords[0], radius=6, color="green", fill=True, popup="Start").add_to(m)
-        folium.CircleMarker(coords[-1], radius=6, color="red", fill=True, popup="End").add_to(m)
-        st_folium(m, width=1150, height=520)
+        folium.CircleMarker(coords[-1], radius=6, color="black", fill=True, popup="End").add_to(m)
+        folium.LayerControl(collapsed=False).add_to(m)
+        st_folium(m, width=1150, height=540)
+        st.caption("Red = raw GPS observations · Blue = predicted/matched route · "
+                   "Green (toggle) = reference route.")
     else:
         st.info("No GPS points returned for this trip.")
 
