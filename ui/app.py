@@ -37,7 +37,7 @@ def predict(base, tid):
 
 # --- Local accuracy fallback (reference route in datasets/) -----------------
 def load_route_arcs(trip_id):
-    for part in ("student_test", "train"):
+    for part in ("evaluator_test", "student_test", "train"):
         p = DATASETS / part / trip_id / f"{trip_id}.route"
         if p.exists():
             try:
@@ -116,19 +116,27 @@ if res:
             src = "computed from reference route"
 
     if acc:
-        a1, a2, a3, a4 = st.columns(4)
+        a1, a2, a3 = st.columns(3)
         a1.metric("Route F1", f"{acc['f1']:.1%}")
         a2.metric("Precision", f"{acc['precision']:.1%}")
         a3.metric("Recall", f"{acc['recall']:.1%}")
-        a4.metric("Candidate miss", f"{res.get('candidate_miss_rate', 0):.1%}")
         st.caption(f"Accuracy {src}. Route-arc overlap vs the reference route.")
     else:
         st.info("No reference route for this trip (reserved evaluator trip) — accuracy n/a.")
 
-    s1, s2, s3 = st.columns(3)
+    # Honest coverage: true-arc miss (needs ground truth) vs skipped points.
+    tmiss = res.get("true_candidate_miss_rate")
+    tmiss_disp = f"{tmiss:.1%}" if tmiss is not None else "n/a"
+    s1, s2, s3, s4 = st.columns(4)
     s1.metric("GPS points", res.get("n_gps_points", 0))
     s2.metric("Route arcs", res.get("n_route_arcs", 0))
-    s3.metric("Scoring model", res.get("model_name", "?"))
+    s3.metric("True-arc miss", tmiss_disp,
+              help="Fraction of GPS points whose true road was NOT in the candidate "
+                   "set — the honest coverage ceiling (needs reference route).")
+    s4.metric("Skipped pts", f"{res.get('candidate_miss_rate', 0):.1%}",
+              help="Fraction of points with zero candidates. NOT the same as "
+                   "true-arc miss — this is usually ~0.")
+    st.caption(f"Scoring model: {res.get('model_name', '?')}")
 
     # Map
     pts = res.get("points", [])

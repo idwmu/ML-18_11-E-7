@@ -68,6 +68,10 @@ class PredictResponse(BaseModel):
     n_route_arcs:        int              = Field(..., description="Length of predicted route")
     candidate_miss_rate: float            = Field(..., description="Fraction of points with no candidate")
     model_name:          str              = Field(..., description="Scoring model identifier")
+    true_candidate_miss_rate: Optional[float] = Field(default=None, description="Fraction of GPS points whose true arc was absent from the candidate set (needs reference route; None otherwise)")
+    route_f1:        Optional[float] = Field(default=None, description="Route-arc F1 vs reference route (None if no ground truth)")
+    route_precision: Optional[float] = Field(default=None, description="Route-arc precision vs reference route")
+    route_recall:    Optional[float] = Field(default=None, description="Route-arc recall vs reference route")
 
     model_config = {
         "json_schema_extra": {

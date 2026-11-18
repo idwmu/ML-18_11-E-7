@@ -79,10 +79,12 @@ log = logging.getLogger(__name__)
 
 def list_evaluator_trips() -> list[str]:
     """Return sorted list of student_test trip IDs (the 10 evaluator trips)."""
-    stest_dir = DATASET_ROOT / "student_test"
-    if not stest_dir.exists():
+    eval_dir = DATASET_ROOT / "evaluator_test"
+    if not eval_dir.exists():
+        eval_dir = DATASET_ROOT / "student_test"
+    if not eval_dir.exists():
         return []
-    return sorted(p.name for p in stest_dir.iterdir() if p.is_dir())
+    return sorted(p.name for p in eval_dir.iterdir() if p.is_dir())
 
 
 def list_all_trips() -> dict[str, list[str]]:
@@ -95,7 +97,7 @@ def list_all_trips() -> dict[str, list[str]]:
 
 def _find_partition(trip_id: str) -> str:
     """Return the partition ('train' or 'student_test') for a trip, or raise."""
-    for partition in ("student_test", "train"):
+    for partition in ("evaluator_test", "student_test", "train"):
         if (DATASET_ROOT / partition / trip_id).exists():
             return partition
     raise FileNotFoundError(
@@ -138,6 +140,17 @@ def _load_trip(trip_id: str) -> dict:
     # For train trips .route exists but we do NOT use label for prediction.
     feat_df = build_trip_features(trip_id, partition)
 
+    # Capture the TRUE candidate-miss rate (true arc not in a point's candidate
+    # set) BEFORE dropping it. This is the honest coverage metric and is only
+    # available when the trip ships a reference .route. NOT used for prediction.
+    true_candidate_miss_rate = None
+    if "candidate_miss" in feat_df.columns:
+        try:
+            per_point = feat_df.groupby("point_idx")["candidate_miss"].max()
+            true_candidate_miss_rate = float(per_point.mean())
+        except Exception:
+            true_candidate_miss_rate = None
+
     # Drop label / candidate_miss if present (must not be used during prediction)
     for col in ("label", "candidate_miss"):
         if col in feat_df.columns:
@@ -164,6 +177,7 @@ def _load_trip(trip_id: str) -> dict:
         "track":      track_tuples,
         "arcs_list":  arcs_list,
         "feature_df": feat_df,
+        "true_candidate_miss_rate": true_candidate_miss_rate,
     }
 
 
@@ -363,6 +377,24 @@ def predict_route(trip_id: str, model: BaseModel) -> dict:
             f"Viterbi failed for trip {trip_id}: {result.message}"
         )
 
+    # --- Server-side accuracy vs reference route (ground truth stays here) ---
+    route_f1 = route_precision = route_recall = None
+    try:
+        from loaders import load_route
+        _part = _find_partition(trip_id)
+        true_route = load_route(trip_id, _part)
+        if true_route is not None and len(true_route) > 0:
+            pred_set = {int(a) for a in result.arc_sequence}
+            true_set = {int(a) for a in true_route}
+            inter = len(pred_set & true_set)
+            route_precision = inter / len(pred_set) if pred_set else 0.0
+            route_recall    = inter / len(true_set) if true_set else 0.0
+            route_f1 = (2 * route_precision * route_recall /
+                        (route_precision + route_recall)
+                        if (route_precision + route_recall) > 0 else 0.0)
+    except Exception as exc:
+        log.warning("predict_route: route accuracy skipped for %s: %s", trip_id, exc)
+
     # --- Step 8: Format response ---
     points = [[lon, lat] for lon, lat, _ts in track]
 
@@ -373,5 +405,9 @@ def predict_route(trip_id: str, model: BaseModel) -> dict:
         "n_gps_points":        result.n_gps_points,
         "n_route_arcs":        len(result.arc_sequence),
         "candidate_miss_rate": result.candidate_miss_rate,
+        "true_candidate_miss_rate": trip.get("true_candidate_miss_rate"),
+        "route_f1":            route_f1,
+        "route_precision":     route_precision,
+        "route_recall":        route_recall,
         "model_name":          model.name,
     }
