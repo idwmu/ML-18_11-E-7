@@ -155,4 +155,3 @@ elif page == "Metrics & Analysis":
         st.metric("Total Matched Distance", f"{m.get('total_dist_km', 0):.2f} km")
         
         st.info("Metrics are calculated server-side against hidden reference data.")
-
