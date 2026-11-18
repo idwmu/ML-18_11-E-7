@@ -1,0 +1,5 @@
+,gps_observations,gps_observations,gps_observations,gps_observations,gps_observations,duration,duration,duration,duration,mean_gap,mean_gap,max_gap,max_gap,gaps_over_5_seconds,missing_values,duplicate_timestamps,duplicate_rows
+,count,mean,median,min,max,mean,median,min,max,mean,median,mean,max,sum,sum,sum,sum
+partition,,,,,,,,,,,,,,,,,
+student_test,10,1916.0,1420.0,262,3958,2025.0,1809.5,265.0,4000.0,1.0905493153945214,1.000676939364539,25.5,210.0,44,0,0,0
+train,80,2605.2125,1529.0,361,19313,5680.4044875,1710.0014999999999,451.0,154030.0,5.101888457147078,1.0589593432711337,2706.4,153064.0,1216,0,0,0
