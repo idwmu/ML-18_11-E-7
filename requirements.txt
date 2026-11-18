@@ -1,0 +1,23 @@
+# PathSnap System C – Backend Dependencies
+# -----------------------------------------
+# Install into your virtual environment with:
+#   pip install -r requirements.txt
+
+# --- FastAPI stack ---
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+pydantic>=2.0
+
+# --- Unit tests ---
+pytest>=7.4
+
+# --- Real model loading (models/model.pkl, joblib bundle) ---
+joblib>=1.3
+scikit-learn>=1.3        # HistGradientBoostingClassifier (must match train env)
+numpy>=1.24
+
+# --- Member A's data-loading pipeline (candidates + features) ---
+pyproj>=3.5              # UTM projection (geo.py -> make_projector)
+scipy>=1.10              # cKDTree for k-nearest arc search (candidates.py)
+pandas>=2.0              # DataFrame handling throughout
+pyarrow>=12.0            # parquet read/write (results/*.parquet)
